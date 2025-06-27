@@ -1,3 +1,3 @@
 # LoRa_traffic
 
-![skizze](https://github.com/user-attachments/assets/d2657b27-4307-4049-9529-21ed0c45d230)
+![skizze](https://github.com/user-attachments/assets/7ff8407c-547e-4bb9-bd49-1a154b7b99d4)
