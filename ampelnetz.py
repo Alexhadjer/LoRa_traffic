@@ -13,7 +13,7 @@ PORT = 10000
 BROADCAST_IP = "255.255.255.255" #for UDP; later change to LoRa
 SIDE_GREEN_DURATION = 5
 
-def current_timestamp(): #for creating timestamp
+def current_timestamp(): #for creating timestamp 
     return datetime.utcnow().isoformat() + 'Z'
 
 def deletions(intersection_id): #this only for testing every time from zero
@@ -31,7 +31,7 @@ class OfflineTrafficLight:
         self.frontierfile = f"frontiers_{intersection_id}.json"
         self.state = {'main': 'GREEN', 'side': 'RED'}
         self.log = [] #append only logs
-        self.frontiers = set() #frontiers to keep track of states
+        self.frontiers = {} #frontiers to keep track of last seen IDs per intersection
         self.current_session_id = None
         self.last_session_time = time.time()
         self.my_turn_timeout = 10 + random.uniform(0, 3) #instead of intersectionid use random so that its nondeterministic
@@ -43,16 +43,16 @@ class OfflineTrafficLight:
         with open(self.logfile, 'a') as f:
             f.write(json.dumps(entry) + "\n")
         self.log.append(entry)
-        self.frontiers = {entry['id']}
+        self.frontiers[entry['intersection_id']] = entry['id']
         with open(self.frontierfile, 'w') as f:
-            json.dump(list(self.frontiers), f)
+            json.dump(self.frontiers, f, indent=2) #saves the last seen messages per intersection on each frontier(for detailed comparison of last recieved messages)
 
     def load_state(self): #load old states if any exist
         if os.path.exists(self.logfile):
             with open(self.logfile) as f:
                 self.log = [json.loads(line.strip()) for line in f if line.strip()]
-                if self.log:
-                    self.frontiers = {self.log[-1]['id']}
+                for entry in self.log:
+                    self.frontiers[entry['intersection_id']] = entry['id']
 
 class UDPCommunicator: #communication now over udp later should change to LoRa
     def __init__(self, intersection_id, handler):
@@ -81,14 +81,15 @@ def run_intersection(intersection_id): #main program to simulate
     tl = OfflineTrafficLight(intersection_id)
     tl.load_state()
 
-    def merge_log(self, incoming_entry): #for merging log entries that are concurrent, 
+    def merge_log(incoming_entry): #for merging log entries that are concurrent, 
         #only one intersection will transmit at a time, will "wait" for each other
-        if incoming_entry['id'] in self.known_ids:
+        sender = incoming_entry['intersection_id']
+        if tl.frontiers.get(sender) == incoming_entry['id']:
             return
 
-        if incoming_entry['reason'] == 'side_green' and self.current_session_id:
+        if incoming_entry['reason'] == 'side_green' and tl.current_session_id:
             #Conflict detection for two concurrent sessions
-            current_entry = self.log[-1] if self.log else None
+            current_entry = tl.log[-1] if tl.log else None
             if current_entry and current_entry['reason'] == 'side_green':
                 incoming_time = incoming_entry.get('timestamp')
                 current_time = current_entry.get('timestamp')
@@ -96,15 +97,15 @@ def run_intersection(intersection_id): #main program to simulate
                 #compares timestamps, might not be very accurate in real uses (no global time), 
                 #but LoRa is also unreliable like UDP so minor message inconsistency is expected
                 if incoming_time and current_time and incoming_time < current_time:
-                    print(f"[{self.intersection_id}] Conflict: incoming session is earlier. Aborting my session.")
-                    self.current_session_id = None
-                    self.switch_back_time = None
+                    print(f"[{tl.intersection_id}] Conflict: incoming session is earlier. Aborting my session.")
+                    tl.current_session_id = None
+                    tl.switch_back_time = None
                 else:
-                    print(f"[{self.intersection_id}] Conflict: keeping my session (mine is earlier)")
+                    print(f"[{tl.intersection_id}] Conflict: keeping my session (mine is earlier)")
                     return  #Do not merge
 
-        self.append_entry(incoming_entry)
-        print(f"[{self.intersection_id}] Merged log entry from {incoming_entry['intersection_id']}")
+        tl.append_entry(incoming_entry)
+        print(f"[{tl.intersection_id}] Merged log entry from {incoming_entry['intersection_id']}")
 
 
     def handle_message(msg):
