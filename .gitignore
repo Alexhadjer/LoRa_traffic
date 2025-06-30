@@ -23,6 +23,9 @@
 # Compiled Static libraries
 *.lai
 *.la
+
+#Mac files
+*.DS_Store
 *.a
 *.lib
 
