@@ -203,6 +203,10 @@ class IntersectionNode:
             idx = self.frontier[self.intersection]
             state = "MAIN ROAD green" if idx % 2 == 0 else "SIDE ROAD green"
             print(f"[{self.intersection}] Switching to {state}")
+        ts = datetime.utcnow().isoformat() + "Z"
+        with open(f"state_log_{self.intersection}.txt", "a") as logf:
+            logf.write(f"{ts} | {self.intersection} | {state}\n")
+
         self.save_frontier()
         self.last_merge_time = time.time()
 
@@ -214,6 +218,10 @@ class IntersectionNode:
             time.sleep(self.switch_interval)
 
     def _on_receive(self, data: bytes):
+        ts = datetime.utcnow().isoformat() + "Z"
+        raw = data.decode('utf-8', errors='ignore')
+        with open(f"receive_log_{self.intersection}.txt", "a") as rlog:
+            rlog.write(f"{ts} | {self.intersection} RECEIVED | {raw}\n")
         try:
             payload = data.decode('utf-8')
             received = json.loads(payload)
