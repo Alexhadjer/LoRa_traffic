@@ -92,7 +92,7 @@ class E22_900T22U:
 # Intersection logic using CRDT frontier
 
 def current_timestamp() -> str:
-    return datetime.utcnow().isoformat() + 'Z'
+    return datetime.now().isoformat() + ' '
 
 def delete_files(path: str):
     if os.path.exists(path):
@@ -203,7 +203,7 @@ class IntersectionNode:
             idx = self.frontier[self.intersection]
             state = "MAIN ROAD green" if idx % 2 == 0 else "SIDE ROAD green"
             print(f"[{self.intersection}] Switching to {state}")
-        ts = datetime.utcnow().isoformat() + "Z"
+        ts = datetime.now().isoformat() + " "
         with open(f"state_log_{self.intersection}.txt", "a") as logf:
             logf.write(f"{ts} | {self.intersection} | {state}\n")
 
@@ -218,7 +218,7 @@ class IntersectionNode:
             time.sleep(self.switch_interval)
 
     def _on_receive(self, data: bytes):
-        ts = datetime.utcnow().isoformat() + "Z"
+        ts = datetime.now().isoformat() + " "
         raw = data.decode('utf-8', errors='ignore')
         with open(f"receive_log_{self.intersection}.txt", "a") as rlog:
             rlog.write(f"{ts} | {self.intersection} RECEIVED | {raw}\n")
