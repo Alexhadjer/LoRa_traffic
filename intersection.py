@@ -11,6 +11,7 @@ intersection, port, host, interval, temp = utils.cli()
 frontier = {}
 frontier_dir = f"frontiers/{intersection}"
 switch_interval = 12 #time between light changes, can be changed
+overload_factor = 0.5 #additional time for traffic overlaod, can be changed
 
 overload_active = False #set to false in the beginning
 overload_road = None
@@ -26,7 +27,7 @@ def delete_files(): #only for testing to start with clean environment each time
         try:
             shutil.rmtree(frontier_dir) #deleting the frontier files
         except Exception as e:
-            print(" ")
+            print("Could not delete files: ", e)
             
 delete_files() #remove this line for serious use
 
@@ -42,6 +43,7 @@ def run_intersections():
                 overload_active = False
                 overload_road = None
                 overload_ends_at = 0
+                frontier[intersection] += 1
                 switch_light()
 
             else:
@@ -58,10 +60,10 @@ def run_intersections():
 def switch_light(): #to change which street has green lights
     global last_merge_time, overload_active, overload_road
     if overload_active:
-        if overload_road == "main": #TODO: does not print out like its supposed to but close?
-            print(f"[{intersection}] OVERLOAD: Holding MAIN ROAD green")
+        if overload_road == "M": #TODO: does not print out like its supposed to but close?
+            print(f"[{intersection}] Traffic overload: Holding MAIN ROAD green")
         else:
-            print(f"[{intersection}] OVERLOAD: Holding SIDE ROAD green")
+            print(f"[{intersection}] Traffic overload: Holding SIDE ROAD green")
         if not temp:
             save_frontier() #update our frontier files
         last_merge_time = time.time() #set timestamp back
@@ -117,20 +119,16 @@ def append_entry(entry): #append to log file and update frontier
         save_frontier()
 
 def receive():
-    global last_merge_time, overload_active, overload_road, overload_ends_at
+    global overload_active, overload_road
     while True:
         data, addr = sock.recvfrom(1024) #change this to LoRa
         try:
             received = json.loads(data.decode("utf-8"))
             if isinstance(received, dict) and "reason" in received and received["reason"].startswith("overload"):
-                overload_road = "main" if "main" in received["reason"] else "side"
-                overload_active = True
-                overload_ends_at = time.time() + 10
+                overload_road = "M" if "M" in received["reason"] else "S"
                 append_entry(received)
-                print(f"[{intersection}] Overload signal received. Holding {overload_road.upper()} ROAD green for 10s")
-                switch_light()
+                activate_overload(overload_road)
             if overload_active:
-                display() 
                 continue  #skip normal message processing if overload is active
 
             updated = False
@@ -161,25 +159,26 @@ def display(): #displaying traffic info
 def overload_input(): #for simulating the overflow of traffic
     global overload_active, overload_road, overload_ends_at
     while True:
-        user_input = input().strip().lower()
-        if user_input.startswith("overload"):
-            parts = user_input.split()
-            if len(parts) == 2 and parts[1] in ["main", "side"]:
-                road = parts[1]
+        user_input = input().strip()
+        if user_input == "M" or user_input == "S":
                 overload_entry = { #for writing the overload into the log files
                     "id": str(uuid.uuid4()),
                     "intersection_id": intersection,
-                    "state": {"main": "GREEN", "side": "RED"} if road == "main" else {"main": "RED", "side": "GREEN"},
-                    "reason": f"overload_{road}",
+                    "state": {"main": "GREEN", "side": "RED"} if user_input == "M" else {"main": "RED", "side": "GREEN"},
+                    "reason": f"overload_{user_input}",
                     "timestamp": current_timestamp()
                 }
                 append_entry(overload_entry)
                 sock.sendto(json.dumps(overload_entry).encode("utf-8"), (host, port))
-                overload_active = True
-                overload_road = road
-                overload_ends_at = time.time() + 10
-                print(f"[{intersection}] Sent overload signal for {road.upper()} ROAD")
-                switch_light()
+                road_name = "MAIN" if user_input == "M" else "SIDE"
+                print(f"[{intersection}] Overload active: Holding {road_name} ROAD green for {switch_interval * overload_factor} s")
+                activate_overload(user_input)
+       
+def activate_overload(road):
+    global overload_active, overload_road, overload_ends_at
+    overload_active = True
+    overload_ends_at = time.time() + switch_interval * overload_factor
+    switch_light()
 
 load_frontier() #load what we saved
 last_merge_time = time.time()
@@ -187,4 +186,8 @@ print(f"[{intersection}] MAIN ROAD green")
 threading.Thread(target=send, daemon=True).start()
 threading.Thread(target=receive, daemon=True).start()
 threading.Thread(target=overload_input, daemon=True).start()
-run_intersections()
+try:
+    run_intersections()
+except KeyboardInterrupt:
+    print(f"End intersection")
+    exit(0)
